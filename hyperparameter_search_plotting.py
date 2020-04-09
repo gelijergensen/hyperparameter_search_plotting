@@ -239,7 +239,7 @@ def _get_data_by_parameter_values(param1, param2, parameter_dicts, scores):
             all_p1_vals.append(param1_val)
             all_p2_vals.append(param2_val)
             all_scores.append([score])
-    return np.array(all_p1_vals), np.array(all_p2_vals), scores
+    return np.array(all_p1_vals), np.array(all_p2_vals), all_scores
 
 
 def _get_data_to_plot(
@@ -248,7 +248,7 @@ def _get_data_to_plot(
     p1_vals, p2_vals, scores_lists = _get_data_by_parameter_values(
         p1_name, p2_name, parameter_dicts, scores
     )
-    scores_to_plot = np.array(list(map(scores_transform, scores_lists)))
+    scores_to_plot = np.array([scores_transform(x) for x in scores_lists])
     return p1_vals, p2_vals, scores_to_plot
 
 
@@ -306,28 +306,44 @@ if __name__ == "__main__":
 
     num_points = 3 * 3 * 2 * 2
 
-    all_params = [
+    params = [
         {"a": i, "b": 3 - 2 * i - 120, "c": i * i, "d": 3 - 2 * i * i}
         for i in range(num_points)
     ]
-    all_scores = [score(**params) for params in all_params]
+    scores = [score(**param) for param in params]
 
-    for parameter_names in (["a", "b"], ["a", "c", "d"], ["a", "b", "c", "d"]):
-        fig = plot_hyperparameter_results(
-            all_params,
-            all_scores,
-            parameter_names=parameter_names,
-            title=f"With {len(parameter_names)} variables",
-            colorbar_label="Score",
-        )
-        save_figure(fig, f"test{len(parameter_names)}.png")
+    # for parameter_names in (["a", "b"], ["a", "c", "d"], ["a", "b", "c", "d"]):
+    #     fig = plot_hyperparameter_results(
+    #         params,
+    #         scores,
+    #         parameter_names=parameter_names,
+    #         title=f"With {len(parameter_names)} variables",
+    #         colorbar_label="Score",
+    #     )
+    #     save_figure(fig, f"test{len(parameter_names)}.png")
+    # fig = plot_hyperparameter_results(
+    #     params,
+    #     scores,
+    #     parameter_names=["a", "b", "c", "d"],
+    #     bounds=dict(a=(-50, 100)),
+    #     title="With altered boundaries",
+    #     colorbar_label="Score",
+    #     colorbar_bounds=(-1000, 300),
+    # )
+    # save_figure(fig, "test-alt.png")
+
+    more_params = [
+        {"a": i, "b": 3 - 2 * i, "c": i * i, "d": 3 - 2 * i * i}
+        for i in range(num_points, num_points + 12)
+    ]
+    more_scores = [score(**param) for param in more_params]
+    all_params = params + more_params
+    all_scores = scores + more_scores
     fig = plot_hyperparameter_results(
         all_params,
         all_scores,
-        parameter_names=["a", "b", "c", "d"],
-        bounds=dict(a=(-50, 100)),
-        title="With altered boundaries",
+        title=f"With more data",
         colorbar_label="Score",
-        colorbar_bounds=(-1000, 300),
+        colorbar_bounds=(np.min(all_scores), np.max(all_scores)),
     )
-    save_figure(fig, "test-alt.png")
+    save_figure(fig, f"test-concat.png")
