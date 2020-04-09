@@ -7,37 +7,24 @@ import matplotlib as mpl
 mpl.use("agg")
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+from matplotlib.ticker import FormatStrFormatter, NullLocator, MaxNLocator
 
 
 ############### Handy plotting utilities ###################
 
 
-def create_gridspec(fig, num_subfigures):
-    """Intelligently creates a GridSpec which has at least as many columns as
-    rows of subplots and minimizes whitespace
+def save_figure(fig, filename, directory=".", dpi=100):
+    """Saves a figure to file
 
     :param fig: figure object
-    :param num_subfigures: integer for the number of subfigures
-    :returns: a GridSpec object
+    :param filename: string for the name of the file
+    :param directory: string for the directory to save in. Defaults to the 
+        current directory
+    :param dpi: dpi for the saved figure
     """
-    num_cols = int(math.ceil(math.sqrt(num_subfigures)))
-    num_rows = int(math.ceil(num_subfigures / num_cols))
-    return GridSpec(num_rows, num_cols, figure=fig)
-
-
-def set_axis_limits(ax, xlimits=None, ylimits=None):
-    """Sets the x- and y-boundaries of the axis (if provided)
-
-    :param ax: axis object
-    :param xlimits: a 2-tuple (lower_bound, upper_bound)
-    :param ylimits: a 2-tuple (lower_bound, upper_bound)
-    :returns: ax
-    """
-    if xlimits is not None:
-        ax.set_xlim(*xlimits)
-    if ylimits is not None:
-        ax.set_ylim(*ylimits)
-    return ax
+    filepath = os.path.join(directory, filename)
+    print(f"Saving file to {filepath}")
+    fig.savefig(filepath, bbox_inches="tight", pad_inches=0.2, dpi=dpi)
 
 
 def set_axis_labels(ax, xlabel=None, ylabel=None, title=None):
@@ -58,62 +45,52 @@ def set_axis_labels(ax, xlabel=None, ylabel=None, title=None):
     return ax
 
 
-def save_figure(fig, filename, directory="."):
-    """Saves a figure to file
+def set_axis_limits(ax, xlimits=None, ylimits=None):
+    """Sets the x- and y-boundaries of the axis (if provided)
 
-    :param fig: figure object
-    :param filename: string for the name of the file
-    :param directory: string for the directory to save in. Defaults to the 
-        current directory
+    :param ax: axis object
+    :param xlimits: a 2-tuple (lower_bound, upper_bound)
+    :param ylimits: a 2-tuple (lower_bound, upper_bound)
+    :returns: ax
     """
-    filepath = os.path.join(directory, filename)
-    print(f"Saving file to {filepath}")
-    fig.savefig(filepath, bbox_inches="tight", pad_inches=0.2)
+    if xlimits is not None:
+        ax.set_xlim(*xlimits)
+    if ylimits is not None:
+        ax.set_ylim(*ylimits)
+    return ax
 
 
-def finalize_figure(
-    fig,
-    gs,
-    supertitle=None,
-    tight_layout=True,
-    with_colorbar=True,
-    colorbar_label=None,
+def set_axis_tick_format(
+    ax, xtickformat=None, ytickformat=None, xrotation=0, yrotation=0
 ):
-    """Takes a figure and gridspec and finalizes by possibly adding a 
-    supertitle, compressing the subfigures, and adding a global colorbar
+    """Sets the formats for the ticks of a single axis
+
+    :param ax: axis object
+    :param xtickformat: optional string for the format of the x ticks
+    :param ytickformat: optional string for the format of the y ticks
+    :param xrotation: rotation angle of the x ticks. Defaults to 0
+    :param yrotation: rotation angle of the y ticks. Defaults to 0
+    :returns: ax
+    """
+    if xtickformat is not None:
+        ax.xaxis.set_major_formatter(FormatStrFormatter(xtickformat))
+    if ytickformat is not None:
+        ax.yaxis.set_major_formatter(FormatStrFormatter(ytickformat))
+
+    plt.setp(ax.get_xticklabels(), ha="right", rotation=xrotation)
+    plt.setp(ax.get_yticklabels(), ha="right", rotation=yrotation)
+    return ax
+
+
+def set_supertitle(fig, supertitle=None):
+    """Takes a figure and (possibly) adds a supertitle
 
     :param fig: figure object
-    :param gs: GridSpec for this figure
-    :param supertitle: optional title for the figure
-    :param tight_layout: whether to compress the whitespace between the 
-        subfigures. Defaults to True
-    :param with_colorbar: whether to add a global colorbar
-    :param colorbar_label: optional label for the colorbar
-    :returns: the figure
+    :param supertitle: optional string for the supertitle
+    :returns: fig
     """
-
     if supertitle is not None:
-        suptitle = fig.suptitle(supertitle)
-        top_edge = 0.95
-    else:
-        top_edge = 1
-
-    # Note, this line can fail, which is why we have a guard for it
-    if tight_layout:
-        if with_colorbar:
-            bottom_edge = 0.08
-        else:
-            bottom_edge = 0
-        gs.tight_layout(fig, rect=[0, bottom_edge, 1, top_edge], h_pad=0.5)
-
-    if with_colorbar:
-        # handle the colorbar (for the first image in the first axis)
-        first_plot = fig.axes[0].collections[0]
-        cax = fig.add_axes([0.09, 0.06, 0.84, 0.02])
-        fig.colorbar(first_plot, cax=cax, orientation="horizontal")
-        if colorbar_label is not None:
-            cax.set_xlabel(colorbar_label)
-
+        fig.suptitle(supertitle)
     return fig
 
 
@@ -125,8 +102,54 @@ def plot_hyperparameter_results(
     scores,
     parameter_names=None,
     scores_transform=np.max,
-    best_index_retriever=np.argmax,
+    title=None,
+    colorbar_label=None,
+    cmap=plt.get_cmap("hot"),
+    untested_color="grey",
+    axes_tick_format="%1.2g",
+    colorbar_tick_format="%g",
+    xtick_rotation=45,
+    ytick_rotation=0,
+    bounds=dict(),
+    colorbar_bounds=None,
 ):
+    """Plots the results from a hyperparameter search, given the parameter 
+    names and values and the resulting scores
+
+    :param parameter_dicts: a list of dictionaries with keys of the parameter 
+        names and values of the parameter values
+    :param scores: a list of the same length as parameter_dicts with the 
+        resulting scores
+    :param parameter_names: a list of parameter names to actually plot (useful
+        for removing parameters which were not numeric). Defaults to the keys of
+        the first dictionary in parameter_dicts
+    :param scores_transform: function which takes as input a list of all the 
+        scores seen by a particular combination of two parameter values (e.g. 
+        for "param1"=3 and "param2"=4 and outputs a single value. Generally
+        either the maximum or minimum value, but could be something like the
+        standard deviation or mean. Defaults to numpy.max
+    :param title: string for the title of the plot. Defaults to no title
+    :param colorbar_label: string for the label of the colorbar. Defaults to no
+        label
+    :param cmap: Colormap to be used for assigning colors. Defaults to "hot"
+    :param untested_color: Color to be used for points which weren't tested
+    :param axes_tick_format: string for the format of the numbers in the
+        axes. Defaults to "general format" with 2 significant figures
+    :param colorbar_tick_format: string for the format of the numbers in the
+        axes. Defaults to "general format"
+    :param xtick_rotation: rotation angle for the x ticks. Defaults to diagonal
+        from the bottom left to upper right
+    :param ytick_rotation: rotation angle for the y ticks. Defaults to no 
+        rotation
+    :param bounds: a dictionary with keys of parameter names and values of 
+        2-tuples (lower_bound, upper_bound). Intended for cropping individual
+        parameter ranges plotted. All keys not provided are not bounded
+    :param colorbar_bounds: a 2-tuple (lower_bound, upper_bound) for the minimal
+        and maximal scores to bound the colorbar. Defaults to no bounding. NOTE:
+        if no bounds are provided, then color scaling can differ between 
+        subplots
+    :returns: the resulting figure
+    """
     if parameter_names is None:
         parameter_names = list(parameter_dicts[0].keys())
 
@@ -134,31 +157,58 @@ def plot_hyperparameter_results(
         _subplot_parameter_names_generator(parameter_names)
     )
 
-    fig = plt.figure()
-
-    gs = create_gridspec(fig, len(parameter_name_pairs))
+    fig, axes = plt.subplots(
+        nrows=len(parameter_names),
+        ncols=len(parameter_names),
+        sharex="col",
+        sharey="row",
+        gridspec_kw=dict(wspace=0, hspace=0, top=0.93),
+        figsize=(2 * len(parameter_names), 2 * len(parameter_names)),
+    )
 
     for axis, (param1_name, param2_name) in zip(
-        _subplot_axes_generator(fig, gs), parameter_name_pairs
+        axes.ravel(), parameter_name_pairs,
     ):
         xvals, yvals, plottable_scores = _get_data_to_plot(
             param1_name, param2_name, parameter_dicts, scores, scores_transform
         )
-        # TODO
-        best_index = best_index_retriever(plottable_scores)
-
-        axis = _plot_scores(axis, xvals, yvals, plottable_scores)
-        axis = _plot_best_value(axis, xvals[best_index], yvals[best_index])
-        axis = set_axis_labels(
+        axis = _plot_scores(
             axis,
-            xlabel=param1_name,
-            ylabel=param2_name,
-            title=f"{param1_name} and {param2_name}",
+            xvals,
+            yvals,
+            plottable_scores,
+            cmap=cmap,
+            background_color=untested_color,
+            bounds=colorbar_bounds,
+        )
+        axis = set_axis_labels(axis, xlabel=param1_name, ylabel=param2_name)
+        axis.label_outer()
+        axis = set_axis_tick_format(
+            axis,
+            axes_tick_format,
+            axes_tick_format,
+            xrotation=xtick_rotation,
+            yrotation=ytick_rotation,
+        )
+        axis = set_axis_limits(
+            axis,
+            xlimits=bounds.get(param1_name),
+            ylimits=bounds.get(param2_name),
         )
 
-    finalize_figure(
-        fig, gs, supertitle="Look ma, it worked!", colorbar_label="score"
+    fig = set_supertitle(fig, title)
+
+    cax = fig.colorbar(
+        fig.axes[0].collections[0],  # this is the first subplot image
+        ax=axes,
+        orientation="vertical",
+        fraction=0.05,
+        format=FormatStrFormatter(colorbar_tick_format),
     )
+    if colorbar_label is not None:
+        cax.set_label(colorbar_label)
+    fig.align_xlabels(axes)
+    fig.align_ylabels(axes)
 
     return fig
 
@@ -202,48 +252,51 @@ def _get_data_to_plot(
     return p1_vals, p2_vals, scores_to_plot
 
 
-def _plot_best_value(
-    ax, best_x, best_y, color="blue", marker="o", linestyle="--"
-):
-    ax.axvline(best_x, color=color, linestyle=linestyle)
-    ax.axhline(best_y, color=color, linestyle=linestyle)
-    ax.plot(best_x, best_y, color=color, marker=marker)
-    return ax
-
-
 def _plot_scores(
-    ax, xvals, yvals, scores, background_color="grey", cmap=plt.get_cmap("hot")
+    ax,
+    xvals,
+    yvals,
+    scores,
+    background_color="grey",
+    cmap=plt.get_cmap("hot"),
+    bounds=None,
 ):
     ax.set_facecolor(background_color)
     try:
         levels = np.linspace(np.min(scores), np.max(scores))
-        ax.tricontourf(xvals, yvals, scores, cmap=cmap, levels=levels)
+        if bounds is not None:
+            ax.tricontourf(
+                xvals,
+                yvals,
+                scores,
+                cmap=cmap,
+                levels=levels,
+                vmin=bounds[0],
+                vmax=bounds[1],
+            )
+        else:
+            ax.tricontourf(xvals, yvals, scores, cmap=cmap, levels=levels)
     except:
         # If something goes wrong, we revert to a scatter plot
-        ax.scatter(xvals, yvals, c=scores, cmap=cmap)
+        if bounds is not None:
+            ax.scatter(
+                xvals,
+                yvals,
+                c=scores,
+                cmap=cmap,
+                vmin=bounds[0],
+                vmax=bounds[1],
+            )
+        else:
+            ax.scatter(xvals, yvals, c=scores, cmap=cmap)
     return ax
 
 
-def _subplot_axes_generator(fig, gs):
-    num_rows, num_cols = gs.get_geometry()
-    num_subfigures_limit = num_rows * num_cols
-    for i in range(num_subfigures_limit):
-        row = i // num_cols
-        col = i % num_cols
-        yield fig.add_subplot(gs[row, col])
-
-
 def _subplot_parameter_names_generator(parameter_names):
-    for i, p1_name in enumerate(parameter_names):
-        for p2_name in parameter_names[i + 1 :]:
-            yield p1_name, p2_name
+    for p1_name in parameter_names:
+        for p2_name in parameter_names:
+            yield p2_name, p1_name
 
-
-# TODO:
-# configuration
-# - objects? long set of kwargs?
-# handle normalization of color in tricolorf!
-# convert to an object
 
 ############### Test #######################################
 if __name__ == "__main__":
@@ -254,10 +307,27 @@ if __name__ == "__main__":
     num_points = 3 * 3 * 2 * 2
 
     all_params = [
-        {"a": i, "b": 3 - 2 * i, "c": i * i, "d": 3 - 2 * i * i}
+        {"a": i, "b": 3 - 2 * i - 120, "c": i * i, "d": 3 - 2 * i * i}
         for i in range(num_points)
     ]
     all_scores = [score(**params) for params in all_params]
 
-    fig = plot_hyperparameter_results(all_params, all_scores)
-    save_figure(fig, "test.png")
+    for parameter_names in (["a", "b"], ["a", "c", "d"], ["a", "b", "c", "d"]):
+        fig = plot_hyperparameter_results(
+            all_params,
+            all_scores,
+            parameter_names=parameter_names,
+            title=f"With {len(parameter_names)} variables",
+            colorbar_label="Score",
+        )
+        save_figure(fig, f"test{len(parameter_names)}.png")
+    fig = plot_hyperparameter_results(
+        all_params,
+        all_scores,
+        parameter_names=["a", "b", "c", "d"],
+        bounds=dict(a=(-50, 100)),
+        title="With altered boundaries",
+        colorbar_label="Score",
+        colorbar_bounds=(-1000, 300),
+    )
+    save_figure(fig, "test-alt.png")
